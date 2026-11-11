@@ -112,9 +112,9 @@ name-that-llm/
 ├── src/ntl/                    # 只放真正共享的代码
 │   ├── __init__.py
 │   ├── constants.py            # 18 个标签、列名
-│   ├── data.py                 # 加载、校验、prompt-grouped CV（待实现）
-│   ├── metrics.py              # balanced accuracy / 混淆矩阵（待实现）
-│   └── submission.py           # 提交校验与写出（待实现）
+│   ├── data.py                 # 加载、校验、prompt-grouped CV、测试形态 thinning
+│   ├── metrics.py              # balanced accuracy、每类召回、混淆矩阵
+│   └── submission.py           # 概率校验、加权融合、argmax、提交写出
 ├── experiments/                # 三条路线各自独立
 │   ├── __init__.py
 │   ├── a_tfidf_svm/            # 成员 A
@@ -181,6 +181,47 @@ data/raw/sample_submission.parquet
 python -m experiments.a_tfidf_svm.scripts.train --config experiments/a_tfidf_svm/configs/baseline.yaml
 ```
 
+## 共享前置代码（已实现）
+
+| 模块 | 能力 |
+|---|---|
+| `ntl.constants` | 18 个合法标签、列名、默认 fold 数与 seed |
+| `ntl.data` | 读取/校验 train/test、prompt-grouped folds、验证集 thinning |
+| `ntl.metrics` | balanced accuracy、每类召回、support、混淆矩阵、JSON 报告 |
+| `ntl.submission` | 概率表校验、按 id 加权平均、argmax、submission 校验/写出 |
+
+典型用法：
+
+```python
+from ntl.data import load_train, grouped_cv_splits
+from ntl.metrics import evaluate
+from ntl.submission import average_proba, write_proba
+
+train = load_train()
+
+# OOF：完整验证折
+for train_idx, val_idx in grouped_cv_splits(train, n_splits=5, seed=0):
+    ...
+
+# 主指标：每个 prompt 抽 2 条，模拟隐藏测试
+for train_idx, val_idx in grouped_cv_splits(
+    train, n_splits=5, seed=0, passages_per_prompt=2
+):
+    ...
+```
+
+生成全队共用的 fold 划分、跑测试、生成提交：
+
+```powershell
+python scripts/make_folds.py
+python -m pytest -q
+
+python scripts/validate_submission.py --submission submissions/submission.parquet
+python scripts/make_submission.py `
+    --proba outputs/ensemble/test_proba.parquet `
+    --out submissions/submission.parquet
+```
+
 ## 协作流程
 
 1. 从 `main` 建分支：`feat/a-tfidf`、`feat/b-layer-probe`、`feat/c-qlora`。
@@ -194,9 +235,9 @@ python -m experiments.a_tfidf_svm.scripts.train --config experiments/a_tfidf_svm
 
 最终提交从各路线输出的 `test_proba.parquet` 生成：
 
-1. 按 `id` 对齐三路概率；
+1. 用 `ntl.submission.average_proba` 按 `id` 对齐三路概率（可加权）；
 2. 在 OOF 上拟合融合权重（简单平均 / 加权平均 / stacking）；
-3. 用 `scripts/make_submission.py`（待实现）校验并写出 `submissions/submission.parquet`；
+3. 用 `scripts/make_submission.py` 校验并写出 `submissions/submission.parquet`；
 4. 校验项：18 个合法标签、`id` 唯一、无空值、行数与 `test.csv` 一致。
 
 ## 近期里程碑

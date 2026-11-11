@@ -21,8 +21,13 @@ MODEL_LABELS: tuple[str, ...] = (
     "kimi-k3",
 )
 N_MODELS = len(MODEL_LABELS)
+MODEL_LABEL_SET = frozenset(MODEL_LABELS)
 
 ID_COLUMN = "id"
 TEXT_COLUMN = "text"
 LABEL_COLUMN = "model"
 PROMPT_COLUMN = "prompt_id"
+
+PROBA_COLUMNS: tuple[str, ...] = (ID_COLUMN, *MODEL_LABELS)
+DEFAULT_N_SPLITS = 5
+DEFAULT_SEED = 0

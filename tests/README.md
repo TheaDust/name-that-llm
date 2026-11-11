@@ -1,6 +1,6 @@
 # 测试
 
-优先覆盖以下契约，防止三条路线在合并时出现静默错误：
+当前已覆盖以下契约，防止三条路线在合并时出现静默错误：
 
 1. **数据 schema**：`train.csv` 列名、18 个标签、`prompt_id` 分组完整性。
 2. **指标**：自定义 balanced accuracy 与 `sklearn.metrics.balanced_accuracy_score` 一致。
