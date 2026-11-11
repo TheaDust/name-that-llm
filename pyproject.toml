@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "name-that-llm"
+version = "0.1.0"
+description = "Team solution for the Kaggle Name That LLM competition"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scipy>=1.13",
+    "scikit-learn>=1.5",
+    "pyarrow>=16.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+# 成员 A：TF-IDF + LinearSVC，只用 CPU
+a = []
+
+# 成员 B：Qwen3-Embedding-8B 多层特征
+b = [
+    "torch>=2.3",
+    "transformers>=4.45",
+    "sentence-transformers>=3.0",
+    "accelerate>=0.34",
+]
+
+# 成员 C：Qwen3-4B/8B QLoRA
+c = [
+    "torch>=2.3",
+    "transformers>=4.45",
+    "peft>=0.13",
+    "bitsandbytes>=0.43",
+    "accelerate>=0.34",
+    "datasets>=2.20",
+    "trl>=0.10",
+]
+
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

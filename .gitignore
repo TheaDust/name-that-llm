@@ -1,0 +1,54 @@
+# --- 原始数据：不提交 -------------------------------------------------------
+data/raw/*
+!data/raw/README.md
+data/processed/*
+!data/processed/README.md
+
+# --- 实验产物：不提交 -------------------------------------------------------
+outputs/
+submissions/*
+!submissions/README.md
+
+# --- 模型权重 / 大文件 ------------------------------------------------------
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.npy
+*.npz
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Notebook ---------------------------------------------------------------
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# --- 环境 / 密钥 / Kaggle ---------------------------------------------------
+.env
+.env.*
+!.env.example
+.kaggle/
+
+# --- 本地参考资料 -----------------------------------------------------------
+docs/reference/
+
+# --- 编辑器 / 操作系统 ------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
