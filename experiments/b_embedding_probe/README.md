@@ -19,11 +19,11 @@
 3. **验证**
    - 严格按 `prompt_id` 分组；
    - 提取特征时不使用标签，避免任何泄漏；
-   - 主指标按隐藏测试形态（每 prompt 抽 1–3 条）计算。
+   - 主指标使用完整 grouped OOF 的 balanced accuracy。
 
 ## 资源
 
-24 GB GPU 推荐。8B 模型 bf16 权重约 16 GB，加上激活和 batch 需要控制：
+24 GB GPU 推荐。8B 模型 bf16 权重约 16 GB，加上激活和 batch 需要控制。基座模型优先使用 Hugging Face 缓存（建议 `HF_HOME` 指到仓库外），不要放进 Git：
 
 - 优先 batch=1–4、较短 `max_length`；
 - 若 OOM，改用 4-bit 量化或只提取部分层；

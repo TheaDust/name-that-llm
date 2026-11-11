@@ -76,6 +76,7 @@ outputs/<route>/<run_id>/
 ├── oof_proba.parquet    # 训练集 OOF 概率
 ├── test_proba.parquet   # 测试集概率
 ├── metrics.json         # 指标与评估协议
+├── folds.parquet        # 本次使用的共享划分
 └── log.txt              # 运行日志摘要
 ```
 
@@ -86,15 +87,17 @@ outputs/<route>/<run_id>/
 - `test_proba.parquet`：列 = `id` + 18 个模型名，覆盖 `test.csv` 的每个 `id` 恰好一次。
 - 概率矩阵每行和为 1，不允许 NaN；列名必须与比赛标签完全一致。
 - `metrics.json` 至少包含：`balanced_accuracy`、`per_class_recall`、`n_folds`、`seed`、`protocol`。
-- `config.yaml` 必须能复现该 run；大文件（embedding 缓存、adapter、日志全文）不进 Git。
+- `config.yaml` 记录超参数、训练 seed、数据文件 SHA-256、Git commit 和依赖版本；每个 run 同时保存实际使用的 `folds.parquet`。
+- 特征拟合、标准化、PCA 和概率校准均只使用当前训练折；OOF 文件校验只检查格式，训练入口负责保证预测来源。
+- 大文件（embedding 缓存、adapter、日志全文）不进 Git。
 
 ## 验证协议
 
 同一个 prompt 的 18 条回答主题相同，只是模型不同，因此**绝不能按行随机划分**：
 
 1. 用 `StratifiedGroupKFold` / `GroupKFold`，以 `prompt_id` 为 group 切分。
-2. 每个验证折保留完整行用于生成 OOF 概率；计算主指标时，再按 prompt 抽 1–3 条，模拟隐藏测试的“不完整组”形态。
-3. 所有成员使用同一套 fold 划分与 seed，保证 A/B/C 的分数可比。
+2. 每个验证折保留完整行用于生成 OOF 概率，汇总全部 OOF 后计算主指标。
+3. 由一人生成并分发 `data/processed/folds.parquet`，各成员读取同一文件并按 `id` 对齐；每个 run 保存使用的 fold 文件。
 4. `prompt_id` 只是训练集元数据，测试集没有，不能作为特征。
 5. 报告 balanced accuracy 的同时，附上每类召回率和混淆矩阵。
 6. 测试集每个模型的条数不相等，不能假设“一组 18 条、每模型一条”。
@@ -109,12 +112,13 @@ name-that-llm/
 ├── data/
 │   ├── raw/                    # 原始 csv（不提交）
 │   └── processed/              # 跨 run 复用的特征缓存（不提交）
+├── weights/                    # 基座/最终权重（不提交，仅 README）
 ├── src/ntl/                    # 只放真正共享的代码
 │   ├── __init__.py
 │   ├── constants.py            # 18 个标签、列名
-│   ├── data.py                 # 加载、校验、prompt-grouped CV、测试形态 thinning
+│   ├── data.py                 # 加载、校验、共享 prompt-grouped CV
 │   ├── metrics.py              # balanced accuracy、每类召回、混淆矩阵
-│   └── submission.py           # 概率校验、加权融合、argmax、提交写出
+│   └── submission.py           # 概率校验、argmax、提交写出
 ├── experiments/                # 三条路线各自独立
 │   ├── __init__.py
 │   ├── a_tfidf_svm/            # 成员 A
@@ -175,7 +179,7 @@ data/raw/sample_submission.parquet
 
 详细字段见 [data/raw/README.md](data/raw/README.md)。
 
-从仓库根目录以模块方式运行实验入口，保证 `experiments` 包可导入：
+各路线实现训练入口后，从仓库根目录以模块方式运行，例如：
 
 ```powershell
 python -m experiments.a_tfidf_svm.scripts.train --config experiments/a_tfidf_svm/configs/baseline.yaml
@@ -186,28 +190,31 @@ python -m experiments.a_tfidf_svm.scripts.train --config experiments/a_tfidf_svm
 | 模块 | 能力 |
 |---|---|
 | `ntl.constants` | 18 个合法标签、列名、默认 fold 数与 seed |
-| `ntl.data` | 读取/校验 train/test、prompt-grouped folds、验证集 thinning |
-| `ntl.metrics` | balanced accuracy、每类召回、support、混淆矩阵、JSON 报告 |
-| `ntl.submission` | 概率表校验、按 id 加权平均、argmax、submission 校验/写出 |
+| `ntl.data` | 读取/校验 train/test、生成和使用共享 folds |
+| `ntl.metrics` | 基于 sklearn 的 balanced accuracy、每类召回与 support 报告 |
+| `ntl.submission` | 概率表校验、argmax、submission 校验/写出 |
 
 典型用法：
 
 ```python
+import pandas as pd
+
 from ntl.data import load_train, grouped_cv_splits
+from ntl.constants import MODEL_LABELS
 from ntl.metrics import evaluate
-from ntl.submission import average_proba, write_proba
+from ntl.submission import write_proba
 
 train = load_train()
 
-# OOF：完整验证折
-for train_idx, val_idx in grouped_cv_splits(train, n_splits=5, seed=0):
+folds = pd.read_parquet("data/processed/folds.parquet")
+
+for train_idx, val_idx in grouped_cv_splits(train, folds):
+    # 在 train.iloc[train_idx] 上拟合全部特征处理与模型，预测 train.iloc[val_idx]
     ...
 
-# 主指标：每个 prompt 抽 2 条，模拟隐藏测试
-for train_idx, val_idx in grouped_cv_splits(
-    train, n_splits=5, seed=0, passages_per_prompt=2
-):
-    ...
+# 将所有验证折预测按 train 的行顺序汇总成 oof（列为 id + 18 个标签）
+# write_proba(oof, "outputs/a_tfidf_svm/a-tfidf-001/oof_proba.parquet", ids=train["id"])
+# report = evaluate(train["model"], oof[list(MODEL_LABELS)].idxmax(axis=1))
 ```
 
 生成全队共用的 fold 划分、跑测试、生成提交：
@@ -222,6 +229,24 @@ python scripts/make_submission.py `
     --out submissions/submission.parquet
 ```
 
+## 模型权重与缓存
+
+| 内容 | 位置 | 是否提交 |
+|---|---|---|
+| 基座模型（Qwen3-Embedding-8B、Qwen3-4B/8B） | Hugging Face 缓存（推荐），或 `weights/base/` | 否 |
+| 单次 run 的 checkpoint / adapter | `outputs/<route>/<run_id>/` | 否 |
+| 最终选定、跨 run 复用的 adapter | `weights/adapters/<run_id>/` | 否 |
+| 最终合并模型 | `weights/merged/<run_id>/` | 否 |
+| 特征缓存 | `data/processed/` | 否 |
+
+建议把 Hugging Face 缓存指到仓库外：
+
+```powershell
+$env:HF_HOME = "D:\hf-cache"
+```
+
+`weights/` 只有 README 会被 Git 跟踪；权重文件本身全部忽略。Kaggle 正式提交时需把基座模型和 adapter 作为私有 Dataset / Model 挂载到 `/kaggle/input/...`。详见 [weights/README.md](weights/README.md)。
+
 ## 协作流程
 
 1. 从 `main` 建分支：`feat/a-tfidf`、`feat/b-layer-probe`、`feat/c-qlora`。
@@ -235,8 +260,8 @@ python scripts/make_submission.py `
 
 最终提交从各路线输出的 `test_proba.parquet` 生成：
 
-1. 用 `ntl.submission.average_proba` 按 `id` 对齐三路概率（可加权）；
-2. 在 OOF 上拟合融合权重（简单平均 / 加权平均 / stacking）；
+1. 各路线概率先按 `id` 和固定标签列对齐，再在融合阶段实现平均或加权；
+2. 用同一套完整 OOF 评估融合方案，再应用到测试概率；
 3. 用 `scripts/make_submission.py` 校验并写出 `submissions/submission.parquet`；
 4. 校验项：18 个合法标签、`id` 唯一、无空值、行数与 `test.csv` 一致。
 

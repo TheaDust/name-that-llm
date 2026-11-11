@@ -6,7 +6,7 @@ Every route writes the same two probability tables:
 * ``test_proba.parquet`` - one row per test id.
 
 Both have the columns ``id`` plus the 18 model names. These helpers validate
-that contract, average multiple routes, and turn probabilities into a checked
+that contract and turn probabilities into a checked
 ``submission.parquet``.
 """
 
@@ -65,7 +65,6 @@ def validate_proba(
     proba: pd.DataFrame,
     *,
     ids: Sequence[str] | pd.Index | None = None,
-    labels: Sequence[str] = MODEL_LABELS,
     atol: float = 1e-4,
 ) -> pd.DataFrame:
     """Validate the probability-table contract and return ``proba``.
@@ -74,7 +73,7 @@ def validate_proba(
     each row summing to 1 within ``atol``. If ``ids`` is given, the id set must
     match exactly (order is free).
     """
-    required = [ID_COLUMN, *labels]
+    required = [ID_COLUMN, *MODEL_LABELS]
     _require_columns(proba, required, "probability table")
 
     actual_ids = _checked_ids(proba[ID_COLUMN], "probability table")
@@ -83,7 +82,7 @@ def validate_proba(
         _compare_id_sets(actual_ids, expected_ids, "probability table")
 
     try:
-        values = proba[list(labels)].to_numpy(dtype=float)
+        values = proba[list(MODEL_LABELS)].to_numpy(dtype=float)
     except (TypeError, ValueError) as exc:
         raise ValueError("probability columns must all be numeric") from exc
 
@@ -105,11 +104,10 @@ def read_proba(
     path: str | Path,
     *,
     ids: Sequence[str] | pd.Index | None = None,
-    labels: Sequence[str] = MODEL_LABELS,
 ) -> pd.DataFrame:
     """Read a probability parquet and validate it."""
     proba = pd.read_parquet(path)
-    return validate_proba(proba, ids=ids, labels=labels)
+    return validate_proba(proba, ids=ids)
 
 
 def write_proba(
@@ -117,71 +115,13 @@ def write_proba(
     path: str | Path,
     *,
     ids: Sequence[str] | pd.Index | None = None,
-    labels: Sequence[str] = MODEL_LABELS,
 ) -> Path:
     """Validate a probability table and write it as parquet."""
-    validate_proba(proba, ids=ids, labels=labels)
+    validate_proba(proba, ids=ids)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     proba.to_parquet(path, index=False)
     return path
-
-
-# ------------------------------------------------------------------ ensembling
-def average_proba(
-    frames: Sequence[pd.DataFrame],
-    *,
-    weights: Sequence[float] | None = None,
-    ids: Sequence[str] | pd.Index | None = None,
-    labels: Sequence[str] = MODEL_LABELS,
-) -> pd.DataFrame:
-    """Weighted average of probability tables, aligned by ``id``.
-
-    Missing ids in any input are an error; row order may differ between inputs.
-    Weights are normalised to sum to 1.
-    """
-    frames = list(frames)
-    if not frames:
-        raise ValueError("at least one probability table is required")
-
-    if ids is None:
-        target_ids = _checked_ids(frames[0][ID_COLUMN], "first probability table")
-    else:
-        target_ids = _checked_ids(ids, "expected ids")
-
-    for frame in frames:
-        validate_proba(frame, ids=target_ids, labels=labels)
-
-    if weights is None:
-        weight_values = np.full(len(frames), 1.0 / len(frames))
-    else:
-        weight_values = np.asarray(weights, dtype=float)
-        if len(weight_values) != len(frames):
-            raise ValueError(
-                f"got {len(weight_values)} weights for {len(frames)} probability tables"
-            )
-        if not np.isfinite(weight_values).all() or (weight_values < 0).any():
-            raise ValueError("weights must be finite and non-negative")
-        total = float(weight_values.sum())
-        if total <= 0:
-            raise ValueError("weights must sum to a positive value")
-        weight_values = weight_values / total
-
-    columns = list(labels)
-    blended = np.zeros((len(target_ids), len(columns)), dtype=float)
-    for frame, weight in zip(frames, weight_values):
-        aligned = frame.set_index(ID_COLUMN).loc[target_ids, columns].to_numpy(dtype=float)
-        blended += weight * aligned
-
-    row_sums = blended.sum(axis=1, keepdims=True)
-    if (row_sums <= 0).any():
-        raise ValueError("averaged probability rows must have positive mass")
-    blended = blended / row_sums
-
-    result = pd.DataFrame(blended, columns=columns)
-    result.insert(0, ID_COLUMN, target_ids.to_numpy())
-    validate_proba(result, labels=labels)
-    return result
 
 
 # ------------------------------------------------------------------ submission
@@ -189,16 +129,15 @@ def argmax_proba(
     proba: pd.DataFrame,
     *,
     ids: Sequence[str] | pd.Index | None = None,
-    labels: Sequence[str] = MODEL_LABELS,
 ) -> pd.DataFrame:
     """Turn a probability table into ``id, model`` predictions."""
-    validate_proba(proba, ids=ids, labels=labels)
-    values = proba[list(labels)].to_numpy(dtype=float)
-    chosen = np.asarray(list(labels), dtype=object)[values.argmax(axis=1)]
+    validate_proba(proba, ids=ids)
+    values = proba[list(MODEL_LABELS)].to_numpy(dtype=float)
+    chosen = np.asarray(list(MODEL_LABELS), dtype=object)[values.argmax(axis=1)]
     return pd.DataFrame({ID_COLUMN: proba[ID_COLUMN].to_numpy(), LABEL_COLUMN: chosen})
 
 
-def validate_predictions(
+def validate_submission(
     predictions: pd.DataFrame,
     *,
     test_ids: Sequence[str] | pd.Index | None = None,
@@ -220,10 +159,6 @@ def validate_predictions(
     return predictions
 
 
-# Readable alias for scripts and reviewers.
-validate_submission = validate_predictions
-
-
 def write_submission(
     predictions: pd.DataFrame,
     path: str | Path,
@@ -234,7 +169,7 @@ def write_submission(
 
     When ``test_ids`` is provided the output is reordered to match the test set.
     """
-    validate_predictions(predictions, test_ids=test_ids)
+    validate_submission(predictions, test_ids=test_ids)
     if test_ids is not None:
         target_ids = _checked_ids(test_ids, "test ids")
         predictions = (

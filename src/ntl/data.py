@@ -25,7 +25,6 @@ from .constants import (
     ID_COLUMN,
     LABEL_COLUMN,
     MODEL_LABEL_SET,
-    N_MODELS,
     PROMPT_COLUMN,
     TEXT_COLUMN,
 )
@@ -120,14 +119,6 @@ def validate_train(df: pd.DataFrame) -> pd.DataFrame:
             f"{int(duplicated_pairs.sum())} duplicate rows, e.g. {sample}"
         )
 
-    sizes = df.groupby(PROMPT_COLUMN, sort=False).size()
-    oversized = sizes[sizes > N_MODELS]
-    if len(oversized):
-        raise ValueError(
-            f"prompt groups cannot exceed {N_MODELS} rows (one per model); "
-            f"found {len(oversized)} oversized groups, max={int(sizes.max())}"
-        )
-
     return df
 
 
@@ -189,67 +180,35 @@ def assign_folds(
     return folds
 
 
-def thin_validation_indices(
-    train: pd.DataFrame,
-    indices: np.ndarray,
-    passages_per_prompt: int,
-    *,
-    seed: int = DEFAULT_SEED,
-) -> np.ndarray:
-    """Keep at most ``passages_per_prompt`` rows per prompt from ``indices``.
-
-    The hidden test does not contain all 18 answers for every question, so
-    scoring on full validation folds is optimistic. Thinning validation to
-    1-3 rows per prompt makes the offline estimate closer to the real task.
-    """
-    if passages_per_prompt < 1:
-        raise ValueError("passages_per_prompt must be >= 1")
-    indices = np.asarray(indices, dtype=int)
-    if len(indices) == 0:
-        return indices
-
-    prompt_values = train[PROMPT_COLUMN].to_numpy()[indices]
-    rng = np.random.default_rng(seed)
-    keep: list[int] = []
-    for prompt in pd.unique(prompt_values):
-        positions = indices[prompt_values == prompt]
-        take = min(passages_per_prompt, len(positions))
-        keep.extend(rng.choice(positions, size=take, replace=False).tolist())
-    return np.sort(np.asarray(keep, dtype=int))
-
-
-def _iter_folds(
-    train: pd.DataFrame,
-    folds: np.ndarray,
-    n_splits: int,
-    passages_per_prompt: int | None,
-    seed: int,
-) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    for fold in range(n_splits):
-        train_idx = np.flatnonzero(folds != fold)
-        val_idx = np.flatnonzero(folds == fold)
-        if passages_per_prompt is not None:
-            val_idx = thin_validation_indices(
-                train, val_idx, passages_per_prompt, seed=seed + fold
-            )
-        yield train_idx, val_idx
-
-
 def grouped_cv_splits(
     train: pd.DataFrame,
-    *,
-    n_splits: int = DEFAULT_N_SPLITS,
-    seed: int = DEFAULT_SEED,
-    passages_per_prompt: int | None = None,
+    folds: pd.DataFrame,
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    """Yield ``(train_idx, val_idx)`` positional indices for prompt-grouped CV.
+    """Yield positional train/validation indices from the shared fold table.
 
-    ``passages_per_prompt=None`` keeps full validation folds (use these to build
-    OOF probabilities). An integer thins each validation fold to the hidden-test
-    shape (use this for the headline score).
+    Load ``data/processed/folds.parquet`` once and pass it to every route.
+    Rows are aligned by id, so callers may reorder the training data.
     """
-    folds = assign_folds(train, n_splits=n_splits, seed=seed)
-    return _iter_folds(train, folds, n_splits, passages_per_prompt, seed)
+    validate_train(train)
+    _require_columns(folds, [ID_COLUMN, PROMPT_COLUMN, LABEL_COLUMN, "fold"], "folds")
+    _require_unique_ids(folds, "folds")
+    if set(folds[ID_COLUMN]) != set(train[ID_COLUMN]):
+        raise ValueError("fold ids must match training ids exactly")
+    aligned = folds.set_index(ID_COLUMN).loc[train[ID_COLUMN]]
+    for column in (PROMPT_COLUMN, LABEL_COLUMN):
+        if not np.array_equal(aligned[column].to_numpy(), train[column].to_numpy()):
+            raise ValueError(f"fold {column} values do not match training data")
+    values = aligned["fold"]
+    if values.isna().any() or not pd.api.types.is_integer_dtype(values):
+        raise ValueError("fold values must be non-null integers")
+    fold_ids = sorted(values.unique())
+    if len(fold_ids) < 2 or fold_ids != list(range(len(fold_ids))):
+        raise ValueError("fold values must be consecutive integers starting at 0, with at least 2 folds")
+    if aligned.groupby(PROMPT_COLUMN)["fold"].nunique().gt(1).any():
+        raise ValueError("each prompt must belong to exactly one fold")
+    assignments = values.to_numpy()
+    for fold in fold_ids:
+        yield np.flatnonzero(assignments != fold), np.flatnonzero(assignments == fold)
 
 
 def fold_table(

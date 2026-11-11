@@ -7,7 +7,6 @@ from ntl.data import (
     assign_folds,
     fold_table,
     grouped_cv_splits,
-    thin_validation_indices,
     validate_test,
     validate_train,
 )
@@ -82,7 +81,7 @@ def test_grouped_cv_splits_have_no_prompt_overlap_and_full_coverage():
     train = make_train()
     seen = np.full(len(train), -1)
     for fold, (train_idx, val_idx) in enumerate(
-        grouped_cv_splits(train, n_splits=4, seed=3)
+        grouped_cv_splits(train, fold_table(train, n_splits=4, seed=3))
     ):
         train_prompts = set(train.iloc[train_idx][PROMPT_COLUMN])
         val_prompts = set(train.iloc[val_idx][PROMPT_COLUMN])
@@ -92,35 +91,38 @@ def test_grouped_cv_splits_have_no_prompt_overlap_and_full_coverage():
     assert (seen >= 0).all()
 
 
-def test_thinned_validation_matches_hidden_test_shape():
-    train = make_train()
-    for _, val_idx in grouped_cv_splits(
-        train, n_splits=4, seed=3, passages_per_prompt=2
-    ):
-        val = train.iloc[val_idx]
-        assert val.groupby(PROMPT_COLUMN).size().max() <= 2
-
-
-def test_thinning_is_deterministic_and_respects_cap():
-    train = make_train()
-    indices = np.arange(len(train))
-    first = thin_validation_indices(train, indices, 3, seed=11)
-    second = thin_validation_indices(train, indices, 3, seed=11)
-    assert np.array_equal(first, second)
-
-    val = train.iloc[first]
-    assert val.groupby(PROMPT_COLUMN).size().max() <= 3
-
-
-def test_thinning_with_large_cap_keeps_everything():
-    train = make_train()
-    indices = np.arange(len(train))
-    kept = thin_validation_indices(train, indices, len(MODEL_LABELS), seed=0)
-    assert np.array_equal(kept, indices)
-
-
 def test_fold_table_has_expected_columns():
     train = make_train()
     table = fold_table(train, n_splits=4, seed=1)
     assert list(table.columns) == [ID_COLUMN, PROMPT_COLUMN, LABEL_COLUMN, "fold"]
     assert len(table) == len(train)
+
+
+def test_shared_folds_align_after_training_rows_are_reordered():
+    train = make_train()
+    folds = fold_table(train, n_splits=4, seed=3)
+    reordered = train.sample(frac=1, random_state=8)
+    for fold, (_, val_idx) in enumerate(grouped_cv_splits(reordered, folds)):
+        assert set(reordered.iloc[val_idx][ID_COLUMN]) == set(
+            folds.loc[folds["fold"] == fold, ID_COLUMN]
+        )
+
+
+@pytest.mark.parametrize("damage", ["missing_id", "label", "prompt", "leak", "null", "fractional"])
+def test_shared_folds_reject_mismatches_and_leakage(damage):
+    train = make_train()
+    folds = fold_table(train, n_splits=4)
+    if damage == "missing_id":
+        folds = folds.iloc[1:]
+    elif damage == "label":
+        folds.loc[0, LABEL_COLUMN] = MODEL_LABELS[1]
+    elif damage == "prompt":
+        folds.loc[0, PROMPT_COLUMN] = "another-prompt"
+    elif damage == "leak":
+        folds.loc[0, "fold"] = (folds.loc[0, "fold"] + 1) % 4
+    elif damage == "null":
+        folds.loc[0, "fold"] = np.nan
+    else:
+        folds["fold"] = folds["fold"].astype(float) + 0.5
+    with pytest.raises(ValueError):
+        list(grouped_cv_splits(train, folds))

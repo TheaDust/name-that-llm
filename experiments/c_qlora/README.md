@@ -21,7 +21,7 @@
    - 对比：zero-shot、线性 probe、QLoRA 全量/分层学习率。
 4. **验证与解释**
    - 严格按 `prompt_id` 分组；
-   - 主指标按隐藏测试形态（每 prompt 抽 1–3 条）计算；
+   - 主指标使用完整 grouped OOF 的 balanced accuracy；
    - 做长度、主题、模型家族的切片分析，确认不是主题捷径。
 
 ## 资源
@@ -34,7 +34,7 @@
 
 ## 产物
 
-按根 README 的契约写入 `outputs/c_qlora/<run_id>/`，`run_id` 从 `c-qlora-001` 开始。Adapter 权重与缓存不进 Git。
+按根 README 的契约写入 `outputs/c_qlora/<run_id>/`，`run_id` 从 `c-qlora-001` 开始。单次 run 的 adapter 留在 `outputs/`；最终选定、需要复用的 adapter 复制到 `weights/adapters/<run_id>/`。权重与缓存不进 Git。
 
 ## 目录
 

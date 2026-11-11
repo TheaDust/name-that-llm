@@ -5,9 +5,8 @@ import pytest
 from ntl.constants import ID_COLUMN, LABEL_COLUMN, MODEL_LABELS, N_MODELS
 from ntl.submission import (
     argmax_proba,
-    average_proba,
     read_proba,
-    validate_predictions,
+    validate_submission,
     validate_proba,
     write_proba,
     write_submission,
@@ -79,29 +78,6 @@ def test_argmax_proba_returns_id_and_label():
     assert predictions[LABEL_COLUMN].tolist() == expected.tolist()
 
 
-def test_average_proba_aligns_ids_and_normalises_weights():
-    first = proba_frame(["a", "b", "c"], seed=1)
-    second = proba_frame(["c", "a", "b"], seed=2)
-
-    averaged = average_proba([first, second])
-    assert averaged[ID_COLUMN].tolist() == ["a", "b", "c"]
-    assert np.allclose(averaged[list(MODEL_LABELS)].sum(axis=1), 1.0)
-
-    aligned_second = second.set_index(ID_COLUMN).loc[["a", "b", "c"]]
-    expected = (
-        first.set_index(ID_COLUMN)[list(MODEL_LABELS)].to_numpy()
-        + aligned_second[list(MODEL_LABELS)].to_numpy()
-    ) / 2
-    assert np.allclose(averaged[list(MODEL_LABELS)].to_numpy(), expected)
-
-    weighted = average_proba([first, second], weights=[3, 1])
-    expected_weighted = (
-        3 * first.set_index(ID_COLUMN)[list(MODEL_LABELS)].to_numpy()
-        + aligned_second[list(MODEL_LABELS)].to_numpy()
-    ) / 4
-    assert np.allclose(weighted[list(MODEL_LABELS)].to_numpy(), expected_weighted)
-
-
 def test_write_and_read_proba_roundtrip(tmp_path):
     frame = proba_frame(["a", "b"], seed=3)
     path = write_proba(frame, tmp_path / "proba.parquet", ids=["a", "b"])
@@ -109,21 +85,21 @@ def test_write_and_read_proba_roundtrip(tmp_path):
     pd.testing.assert_frame_equal(loaded, frame)
 
 
-def test_validate_predictions_accepts_valid_frame():
+def test_validate_submission_accepts_valid_frame():
     predictions = pd.DataFrame({ID_COLUMN: ["a", "b"], LABEL_COLUMN: [A, B]})
-    assert validate_predictions(predictions, test_ids=["a", "b"]) is predictions
+    assert validate_submission(predictions, test_ids=["a", "b"]) is predictions
 
 
-def test_validate_predictions_rejects_invalid_label():
+def test_validate_submission_rejects_invalid_label():
     predictions = pd.DataFrame({ID_COLUMN: ["a"], LABEL_COLUMN: ["unknown"]})
     with pytest.raises(ValueError, match="outside the 18"):
-        validate_predictions(predictions)
+        validate_submission(predictions)
 
 
-def test_validate_predictions_rejects_missing_test_id():
+def test_validate_submission_rejects_missing_test_id():
     predictions = pd.DataFrame({ID_COLUMN: ["a"], LABEL_COLUMN: [A]})
     with pytest.raises(ValueError, match="id set does not match"):
-        validate_predictions(predictions, test_ids=["a", "b"])
+        validate_submission(predictions, test_ids=["a", "b"])
 
 
 def test_write_submission_reorders_to_test_order(tmp_path):

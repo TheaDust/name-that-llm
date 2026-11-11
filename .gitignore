@@ -9,6 +9,10 @@ outputs/
 submissions/*
 !submissions/README.md
 
+# --- 模型权重：不提交，仅保留说明 -------------------------------------------
+weights/*
+!weights/README.md
+
 # --- 模型权重 / 大文件 ------------------------------------------------------
 *.safetensors
 *.bin

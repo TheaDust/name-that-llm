@@ -49,11 +49,6 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.pytest.ini_options]
-# Keep test temp files inside the repo: the default system temp directory is
-# not writable on every Windows setup.
-addopts = "--basetemp=.pytest_tmp"
-
 [tool.ruff]
 line-length = 100
 target-version = "py310"

@@ -20,6 +20,8 @@ python scripts/make_submission.py `
 
 约定：
 
+- `folds.parquet` 由一人生成并分发，各路线用 `grouped_cv_splits(train, folds)` 读取同一划分。
+
 - 脚本只做编排，核心逻辑放在 `src/ntl/`。
 - 所有脚本支持 `--help`，路径通过参数传入，不硬编码本机路径。
 - 不把数据、权重、密钥写进脚本。
