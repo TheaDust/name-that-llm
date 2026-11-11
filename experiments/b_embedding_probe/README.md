@@ -37,15 +37,17 @@
 
 ```text
 experiments/b_embedding_probe/
-├── configs/     # 模型、层列表、pooling、probe 超参
-├── notebooks/   # 层级分析可视化
-└── scripts/     # 提取、probe、评估入口
+├── embeddings.py # Qwen3-Embedding 各层 hidden states 提取
+├── probe.py      # 逐层线性 probe / 层拼接 / 降维
+├── configs/      # 模型、层列表、pooling、probe 超参
+├── notebooks/    # 层级分析可视化
+└── scripts/      # 提取、probe、评估入口
 ```
 
 ## 待办
 
-- [ ] 实现 `src/ntl/features/embeddings.py`
-- [ ] 实现 `src/ntl/models/probe.py`
+- [ ] 实现 `experiments/b_embedding_probe/embeddings.py`
+- [ ] 实现 `experiments/b_embedding_probe/probe.py`
 - [ ] 跑通单层（如中间层）probe
 - [ ] 完成 layer-wise 扫描与报告
 - [ ] 与 A 的特征拼接对比

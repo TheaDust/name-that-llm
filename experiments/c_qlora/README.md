@@ -40,6 +40,7 @@
 
 ```text
 experiments/c_qlora/
+├── qlora.py     # 模型加载、LoRA 注入、训练与推理
 ├── configs/     # 模型、LoRA、训练与推理超参
 ├── notebooks/   # 训练曲线与错误分析
 └── scripts/     # 训练、推理、评估入口
@@ -48,7 +49,7 @@ experiments/c_qlora/
 ## 待办
 
 - [ ] 确定分类头方案并跑通小样本
-- [ ] 实现 `src/ntl/models/qlora.py`
+- [ ] 实现 `experiments/c_qlora/qlora.py`
 - [ ] Qwen3-4B QLoRA pilot，登记 OOF
 - [ ] Qwen3-8B 对比与显存调优
 - [ ] 与 A/B 的 OOF 结果对比

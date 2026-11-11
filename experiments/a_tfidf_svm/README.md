@@ -35,6 +35,8 @@ CPU，16 GB RAM；稀疏矩阵通常远小于内存上限。不需要 GPU。
 
 ```text
 experiments/a_tfidf_svm/
+├── features.py  # 多视图 TF-IDF、结构特征
+├── model.py     # LinearSVC / LogisticRegression / 概率校准
 ├── configs/     # 特征块、超参数、seed
 ├── notebooks/   # 个人探索
 └── scripts/     # 训练/评估入口
@@ -42,8 +44,8 @@ experiments/a_tfidf_svm/
 
 ## 待办
 
-- [ ] 实现 `src/ntl/features/tfidf.py`
-- [ ] 实现 `src/ntl/models/linear.py`
+- [ ] 实现 `experiments/a_tfidf_svm/features.py`
+- [ ] 实现 `experiments/a_tfidf_svm/model.py`
 - [ ] 跑通 word-only baseline，登记第一个 OOF 分数
 - [ ] 完成特征块消融与混淆矩阵
 - [ ] 输出 `test_proba.parquet` 供融合
