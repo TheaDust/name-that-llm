@@ -1,0 +1,32 @@
+model:
+  name_or_path: Qwen/Qwen3-4B
+  revision: main
+  local_files_only: false
+  compute_dtype: bfloat16
+  max_length: 1024
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+data:
+  splits_dir: data/processed/training_splits
+  train: data/raw/train.csv
+  folds: data/processed/folds.parquet
+  test: data/raw/test.csv
+
+training:
+  seed: 0
+  num_train_epochs: 3
+  learning_rate: 0.0001
+  per_device_train_batch_size: 1
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 16
+  gradient_checkpointing: true
+  warmup_ratio: 0.05
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  logging_steps: 20
+  early_stopping_patience: 1
+
+output_dir: outputs/c_qlora/c-qlora-001

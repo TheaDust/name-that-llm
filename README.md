@@ -76,6 +76,8 @@ data/raw/archive/ntl_open_pool.parquet   # 可选
 
 ```powershell
 python -m experiments.a_tfidf_svm.scripts.train --config experiments/a_tfidf_svm/configs/baseline.yaml
+# C：Qwen3 QLoRA（在 CUDA 服务器运行）
+python -m experiments.c_qlora.scripts.train --config experiments/c_qlora/configs/qwen3_4b.yaml
 ```
 
 ## 共享代码

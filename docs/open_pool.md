@@ -149,8 +149,10 @@ for fold, training, validation in training_folds(train, folds, pool, pool_weight
 ### 路线 C：Qwen3 QLoRA
 
 分类微调可从每类最多 500 行开始，当前覆盖 17 类，共约 8,500 条外部数据。
-使用同一函数计算权重，在训练器中实现逐样本加权 loss：
-`sum(weight * loss) / sum(weight)`。训练样本均匀抽取，避免再叠加类别平衡采样。
+训练入口直接使用已准备的权重，全局归一化到均值 1 后，
+对逐样本交叉熵乘权重求均值，保留 pool 与比赛数据的权重比例。
+训练样本均匀抽取，避免再叠加类别平衡采样。运行方式见
+[QLoRA 训练说明](../experiments/c_qlora/README.md)。
 
 pool 总权重约束针对监督分类训练。单独使用 pool 文本做风格适配属于另一项实验，
 应单独记录配置，并以比赛 OOF 判断效果。
