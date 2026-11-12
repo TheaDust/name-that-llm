@@ -21,8 +21,8 @@ import pandas as pd
 from .constants import (
     ID_COLUMN,
     LABEL_COLUMN,
-    MODEL_LABELS,
     MODEL_LABEL_SET,
+    MODEL_LABELS,
 )
 
 

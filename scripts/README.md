@@ -5,6 +5,8 @@
 | 脚本 | 作用 |
 |---|---|
 | `make_folds.py` | 生成统一的 prompt-grouped CV 划分，缓存到 `data/processed/folds.parquet` |
+| `prepare_open_pool.py` | 清洗公开 open pool，写出 `data/processed/open_pool_clean.parquet` 与报告 |
+| `check_data.py` | 检查数据目录、schema、fold 对齐和 open pool 是否就绪 |
 | `make_submission.py` | 读取 `test_proba.parquet`，argmax 后校验并写出 `submissions/submission.parquet` |
 | `validate_submission.py` | 校验列名、id 覆盖、空值、标签合法性 |
 
@@ -12,6 +14,8 @@
 
 ```powershell
 python scripts/make_folds.py
+python scripts/prepare_open_pool.py
+python scripts/check_data.py
 python scripts/validate_submission.py --submission submissions/submission.parquet
 python scripts/make_submission.py `
     --proba outputs/ensemble/test_proba.parquet `

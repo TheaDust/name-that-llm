@@ -36,7 +36,7 @@ name-that-llm/
 ├── experiments/                # a_tfidf_svm / b_embedding_probe / c_qlora
 ├── scripts/                    # make_folds / make_submission / validate_submission
 ├── tests/                      # 数据、CV、概率、提交契约测试
-├── docs/                       # competition.md / experiments.md
+├── docs/                       # competition / experiments / open_pool
 ├── weights/                    # 基座与最终权重（不提交）
 ├── notebooks/                  # 共享 EDA
 ├── submissions/                # 最终提交（不提交）
@@ -55,16 +55,20 @@ python -m venv .venv
 # A 用 CPU；B/C 换成 .[b,dev] / .[c,dev]，并先装匹配 CUDA 的 PyTorch
 pip install -e ".[a,dev]"
 
+# 数据放到 data/raw/，详见 data/raw/README.md
 python scripts/make_folds.py
+python scripts/prepare_open_pool.py   # 可选：需要 data/raw/archive/
+python scripts/check_data.py
 python -m pytest -q
 ```
 
-原始数据放到：
+原始数据放到（下载步骤见 [data/raw/README.md](data/raw/README.md)）：
 
 ```text
 data/raw/train.csv
 data/raw/test.csv
 data/raw/sample_submission.parquet
+data/raw/archive/ntl_open_pool.parquet   # 可选
 ```
 
 运行某条路线的训练入口：
@@ -79,6 +83,7 @@ python -m experiments.a_tfidf_svm.scripts.train --config experiments/a_tfidf_svm
 |---|---|
 | `ntl.constants` | 18 个合法标签、列名、默认 fold 数与 seed |
 | `ntl.data` | 数据加载/校验、共享 fold 读取、prompt-grouped CV |
+| `ntl.open_pool` | 公开 open pool 清洗、类别权重、pool 内部 fold |
 | `ntl.metrics` | balanced accuracy、每类召回、support 报告 |
 | `ntl.submission` | 概率表校验、argmax、submission 校验/写出 |
 
@@ -125,6 +130,7 @@ for train_idx, val_idx in grouped_cv_splits(train, folds):
 ## 文档
 
 - [比赛规则与数据](docs/competition.md)
+- [公开 open pool 清洗与用法](docs/open_pool.md)
 - [实验记录](docs/experiments.md)
 - [路线 A](experiments/a_tfidf_svm/README.md) / [路线 B](experiments/b_embedding_probe/README.md) / [路线 C](experiments/c_qlora/README.md)
 - [权重约定](weights/README.md)

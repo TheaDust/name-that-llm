@@ -9,6 +9,7 @@
 - OOF：验证折覆盖全部训练行，主指标在完整 OOF 上统一计算。
 - 指标：balanced accuracy，附每类召回率。
 - 所有对比必须使用同一 fold 文件；训练随机种子记录在各 run 配置中。
+- 使用外部 open pool 时，记录清洗参数、采样 ID、采样量、seed 和 `pool_weight_ratio`；采样后按当前训练折重算权重；pool 只进训练折，不参与验证。
 
 ## 记录
 

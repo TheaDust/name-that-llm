@@ -1,4 +1,4 @@
-from ntl.constants import MODEL_LABELS, MODEL_LABEL_SET, N_MODELS
+from ntl.constants import MODEL_LABEL_SET, MODEL_LABELS, N_MODELS
 
 
 def test_label_set_is_complete_and_unique():

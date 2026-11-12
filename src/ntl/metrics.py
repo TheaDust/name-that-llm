@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from sklearn.metrics import balanced_accuracy_score, classification_report
 
-from .constants import MODEL_LABELS, MODEL_LABEL_SET
+from .constants import MODEL_LABEL_SET, MODEL_LABELS
 
 
 def evaluate(y_true: Sequence[str], y_pred: Sequence[str]) -> dict:

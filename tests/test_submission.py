@@ -6,8 +6,8 @@ from ntl.constants import ID_COLUMN, LABEL_COLUMN, MODEL_LABELS, N_MODELS
 from ntl.submission import (
     argmax_proba,
     read_proba,
-    validate_submission,
     validate_proba,
+    validate_submission,
     write_proba,
     write_submission,
 )
