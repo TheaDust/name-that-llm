@@ -58,6 +58,7 @@ pip install -e ".[a,dev]"
 # 数据放到 data/raw/，详见 data/raw/README.md
 python scripts/make_folds.py
 python scripts/prepare_open_pool.py   # 可选：需要 data/raw/archive/
+python scripts/prepare_training_data.py  # 导出可直接训练的各折数据，需先准备 folds 和 pool
 python scripts/check_data.py
 python -m pytest -q
 ```
@@ -83,6 +84,7 @@ python -m experiments.a_tfidf_svm.scripts.train --config experiments/a_tfidf_svm
 |---|---|
 | `ntl.constants` | 18 个合法标签、列名、默认 fold 数与 seed |
 | `ntl.data` | 数据加载/校验、共享 fold 读取、prompt-grouped CV |
+| `ntl.training_data` | pool 固定采样、各折训练/验证拼接与权重计算 |
 | `ntl.open_pool` | 公开 open pool 清洗、类别权重、pool 内部 fold |
 | `ntl.metrics` | balanced accuracy、每类召回、support 报告 |
 | `ntl.submission` | 概率表校验、argmax、submission 校验/写出 |

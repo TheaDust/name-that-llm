@@ -55,3 +55,9 @@ Get-FileHash data/processed/folds.parquet, data/processed/open_pool_clean.parque
 `ntl.open_pool.pool_sample_weights(pool, train_rows=len(tr), pool_weight_ratio=1.0)`，
 按实际样本平衡类别，并将 pool 总权重设为比赛训练折总权重。详见
 [公开数据池用法](../../docs/open_pool.md)。
+
+## 各折训练文件
+
+`python scripts/prepare_training_data.py` 写入 `training_splits/`：固定采样的 pool、
+配置记录，以及每折的 `train.parquet`（含训练权重）和 `validation.parquet`。
+运行前准备好共享 folds 和清洗 pool；参数与字段见 [共享脚本](../../scripts/README.md)。

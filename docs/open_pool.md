@@ -97,36 +97,43 @@ data/processed/open_pool_clean.json      # 配置、每步行数、SHA-256
 6. 清洗产物保存数据与来源，训练权重在运行时计算；`match_weight` 只用于清洗时
    选择同题同模型的回答，不直接作为训练权重。
 
+### 统一准备入口
+
+先完成清洗与共享 fold 生成，再运行：
+
+```powershell
+python scripts/prepare_training_data.py
+```
+
+默认每类最多取 1,000 行，五折共用同一份采样。产物位于
+`data/processed/training_splits/`，每折包含 `train.parquet` 和 `validation.parquet`。
+训练表已包含 `sample_weight`；`manifest.json` 记录输入 SHA-256、配置和各折统计，
+`sampled_pool.parquet` 保存实际选择的样本及来源。输出目录必须尚不存在。
+完整参数和读取示例见 [共享脚本](../scripts/README.md)。
+
 ### 路线 A：TF-IDF + LinearSVC
 
+可直接读取导出的训练/验证表，或在 Python 中调用同一接口：
+
 ```python
-import numpy as np
 import pandas as pd
 
-from ntl.data import grouped_cv_splits, load_train
-from ntl.open_pool import load_clean_pool, pool_sample_weights
+from ntl.data import load_train
+from ntl.open_pool import load_clean_pool
+from ntl.training_data import sample_training_pool, training_folds
 
 train = load_train()
 folds = pd.read_parquet("data/processed/folds.parquet")
-pool = load_clean_pool("data/processed/open_pool_clean.parquet")
-pool = pd.concat(
-    [d.sample(min(len(d), 1000), random_state=0) for _, d in pool.groupby("model")],
-    ignore_index=True,
+pool = sample_training_pool(
+    load_clean_pool("data/processed/open_pool_clean.parquet"),
+    max_rows_per_class=1000,
+    seed=0,
 )
-
-for train_idx, val_idx in grouped_cv_splits(train, folds):
-    tr = train.iloc[train_idx]
-    va = train.iloc[val_idx]
-    pool_weights = pool_sample_weights(pool, train_rows=len(tr), pool_weight_ratio=1.0)
-
-    texts = pd.concat([tr["text"], pool["text"]], ignore_index=True)
-    labels = pd.concat([tr["model"], pool["model"]], ignore_index=True)
-    weights = np.concatenate([np.ones(len(tr)), pool_weights])
-
-    # vectorizer 只 fit 在当前训练折 + 选中的 pool 上
+for fold, training, validation in training_folds(train, folds, pool, pool_weight_ratio=1.0):
+    # vectorizer 只 fit 在 training["text"] 上
+    # model.fit(X_train, training["model"], sample_weight=training["sample_weight"])
+    # 验证只用 validation
     ...
-    # model.fit(X, labels, sample_weight=weights)
-    # 验证只用 va，保持比赛验证分布
 ```
 
 随机按类采样后，部分 prompt 的模型覆盖可能低于清洗阈值；清洗阈值描述的是完整产物。
