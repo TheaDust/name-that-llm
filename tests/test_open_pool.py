@@ -1,3 +1,9 @@
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -224,3 +230,120 @@ def test_validate_clean_pool_rejects_duplicate_ids():
 
     with pytest.raises(ValueError, match="duplicated ids"):
         validate_clean_pool(cleaned)
+
+
+def cross_source_pool():
+    pool = make_pool()
+    pool["prompt_canon"] = pool[POOL_PROMPT_COLUMN].map(lambda value: f"Question {value}")
+    # Each source-local group has only one label; canonical panels have all 18.
+    pool[POOL_PROMPT_COLUMN] += ":" + pool[LABEL_COLUMN]
+    return pool
+
+
+def test_canonical_panels_recover_models_across_source_local_groups():
+    pool = cross_source_pool()
+    pool.loc[0, "prompt_canon"] = "  Question\nq000  "
+    cleaned, _ = clean_open_pool(pool, small_config())
+
+    assert len(cleaned) == len(pool)
+    assert set(cleaned[LABEL_COLUMN]) == set(MODEL_LABELS)
+    assert cleaned[POOL_PROMPT_COLUMN].nunique() == 6
+    assert cleaned.groupby(POOL_PROMPT_COLUMN)[LABEL_COLUMN].nunique().eq(18).all()
+    assert cleaned.groupby(POOL_PROMPT_COLUMN)[FOLD_COLUMN].nunique().eq(1).all()
+    shuffled, _ = clean_open_pool(pool.sample(frac=1, random_state=1), small_config())
+    pd.testing.assert_frame_equal(cleaned, shuffled)
+
+
+def test_canonical_pair_cap_applies_across_sources():
+    pool = cross_source_pool()
+    extra = pool.copy()
+    extra[ID_COLUMN] += "-extra"
+    extra[POOL_PROMPT_COLUMN] += "-other-source"
+    extra[TEXT_COLUMN] += " extra"
+    cleaned, _ = clean_open_pool(
+        pd.concat([pool, extra], ignore_index=True), small_config(max_rows_per_pair=1)
+    )
+    assert len(cleaned) == len(pool)
+    assert cleaned.groupby([POOL_PROMPT_COLUMN, LABEL_COLUMN]).size().eq(1).all()
+
+
+def test_canonical_coverage_excludes_filtered_rows():
+    pool = cross_source_pool()
+    # One panel falls from 8 to 7 labels after proxy removal.
+    panel = pool["prompt_canon"].eq("Question q000")
+    pool = pool[~panel | pool[LABEL_COLUMN].isin(MODEL_LABELS[:8])].copy()
+    pool.loc[pool.index[0], "flag_kb_proxy"] = True
+    cleaned, _ = clean_open_pool(pool, small_config())
+    assert not cleaned[ID_COLUMN].str.startswith("pool-000-").any()
+
+
+def test_empty_canonical_values_do_not_form_a_shared_panel():
+    pool = cross_source_pool()
+    pool["prompt_canon"] = [None, "", "  "] * (len(pool) // 3)
+    # Keep enough valid legacy groups for fold assignment.
+    legacy = make_pool(n_prompts=3)
+    legacy[ID_COLUMN] += "-legacy"
+    legacy[TEXT_COLUMN] += " legacy"
+    pool = pd.concat([pool, legacy], ignore_index=True)
+    cleaned, _ = clean_open_pool(pool, small_config())
+    assert len(cleaned) == 3 * len(MODEL_LABELS)
+    assert cleaned[POOL_PROMPT_COLUMN].str.startswith("source:q").all()
+
+
+def test_canonical_normalization_preserves_case_distinctions():
+    pool = cross_source_pool()
+    first_panel = pool["prompt_canon"].eq("Question q000")
+    pool.loc[first_panel & pool[LABEL_COLUMN].isin(MODEL_LABELS[:9]), "prompt_canon"] = (
+        "question q000"
+    )
+    cleaned, _ = clean_open_pool(pool, small_config(min_prompt_models=12))
+    assert not cleaned[ID_COLUMN].str.startswith("pool-000-").any()
+
+
+@pytest.mark.parametrize("value", [None, "", " "])
+def test_clean_pool_rejects_missing_source_group(value):
+    pool = make_pool()
+    pool.loc[0, POOL_PROMPT_COLUMN] = value
+    with pytest.raises(ValueError, match="null/empty prompt groups"):
+        clean_open_pool(pool, small_config())
+
+
+def test_prepare_cli_rejects_missing_classes_unless_explicitly_allowed(tmp_path):
+    pool = make_pool(models=MODEL_LABELS[:8])
+    input_path = tmp_path / "raw.parquet"
+    pool.to_parquet(input_path, index=False)
+    output_path = tmp_path / "clean.parquet"
+    report_path = tmp_path / "report.json"
+    root = Path(__file__).resolve().parents[1]
+    command = [
+        sys.executable,
+        str(root / "scripts/prepare_open_pool.py"),
+        "--input",
+        str(input_path),
+        "--out",
+        str(output_path),
+        "--report",
+        str(report_path),
+        "--train",
+        str(tmp_path / "absent.csv"),
+        "--n-splits",
+        "2",
+    ]
+    env = {**os.environ, "PYTHONPATH": str(root / "src")}
+    result = subprocess.run(command, env=env, capture_output=True, text=True, check=False)
+    assert result.returncode != 0
+    assert "cleaning removed all rows for classes" in result.stderr
+    assert not output_path.exists()
+    assert not report_path.exists()
+    result = subprocess.run(
+        [*command, "--allow-missing-classes"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    report = json.loads(report_path.read_text())
+    assert set(report["missing_classes"]) == set(MODEL_LABELS[8:])
+    assert report["allow_missing_classes"] is True
+    assert len(pd.read_parquet(output_path)) == len(pool)
