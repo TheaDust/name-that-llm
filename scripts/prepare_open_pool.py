@@ -41,6 +41,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--train", type=Path, default=DEFAULT_TRAIN)
     parser.add_argument("--skip-train-check", action="store_true")
+    parser.add_argument(
+        "--allow-missing-classes",
+        action="store_true",
+        help="Explicitly allow a partial-class pool; default rejects missing model labels.",
+    )
     parser.add_argument("--min-words", type=int, default=40)
     parser.add_argument("--max-words", type=int, default=250)
     parser.add_argument("--min-prompt-models", type=int, default=8)
@@ -107,12 +112,20 @@ def main() -> None:
     cleaned, steps = clean_open_pool(raw, config)
     cleaned = validate_clean_pool(cleaned)  # contract check before writing
 
+    class_counts = cleaned[LABEL_COLUMN].value_counts().reindex(MODEL_LABELS).fillna(0)
+    missing_classes = class_counts[class_counts.eq(0)].index.tolist()
+    if missing_classes and not args.allow_missing_classes:
+        raise SystemExit(
+            f"cleaning removed all rows for classes: {missing_classes}. "
+            "Inspect prompt grouping and filters; use --allow-missing-classes "
+            "only for an intentional partial-class pool. No output was written."
+        )
+
     check_no_train_overlap(cleaned, args.train)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     cleaned.to_parquet(args.out, index=False)
 
-    class_counts = cleaned[LABEL_COLUMN].value_counts().reindex(MODEL_LABELS).fillna(0)
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_commit": git_commit(),
@@ -121,6 +134,9 @@ def main() -> None:
         "output": str(args.out),
         "output_sha256": sha256(args.out),
         "config": config_dict(config),
+        "prompt_group_policy": "exact_normalized_canonical_else_source_group_v1",
+        "missing_classes": missing_classes,
+        "allow_missing_classes": args.allow_missing_classes,
         "rows": len(cleaned),
         "prompts": int(cleaned[POOL_PROMPT_COLUMN].nunique()),
         "sources": int(cleaned["source_dataset"].nunique()),

@@ -17,6 +17,7 @@ validation set.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -79,12 +80,7 @@ def _optional(df: pd.DataFrame, column: str, default):
 
 def normalize_text(text: pd.Series) -> pd.Series:
     """Normalize whitespace and unicode so duplicate passages hash equally."""
-    return (
-        text.astype(str)
-        .str.normalize("NFKC")
-        .str.replace(r"\s+", " ", regex=True)
-        .str.strip()
-    )
+    return text.astype(str).str.normalize("NFKC").str.replace(r"\s+", " ", regex=True).str.strip()
 
 
 def _step(steps: list[dict], name: str, delta: int, remaining: int) -> None:
@@ -96,6 +92,26 @@ def _prompt_model_counts(df: pd.DataFrame) -> pd.Series:
     return df.groupby(POOL_PROMPT_COLUMN)[LABEL_COLUMN].transform("nunique")
 
 
+def _canonical_prompt_groups(df: pd.DataFrame) -> pd.Series:
+    """Use exact nonempty canonical prompts across sources, never fuzzy matches.
+
+    Hash namespaces keep canonical values distinct from source-local IDs.
+    Missing canonical metadata falls back to the existing prompt group.
+    """
+    original = df[POOL_PROMPT_COLUMN]
+    if original.isna().any() or original.astype(str).str.strip().eq("").any():
+        raise ValueError("open pool contains null/empty prompt groups")
+    if "prompt_canon" not in df.columns:
+        return original
+    canonical = normalize_text(df["prompt_canon"].fillna(""))
+    groups = "source:" + original.astype(str)
+    present = canonical.ne("")
+    groups.loc[present] = "canonical:" + canonical.loc[present].map(
+        lambda value: hashlib.sha256(value.encode("utf-8")).hexdigest()
+    )
+    return groups
+
+
 def _cap_rows_per_pair(df: pd.DataFrame, limit: int) -> pd.DataFrame:
     ordered = df.sort_values(
         ["match_weight", ID_COLUMN], ascending=[False, True], na_position="last"
@@ -103,9 +119,7 @@ def _cap_rows_per_pair(df: pd.DataFrame, limit: int) -> pd.DataFrame:
     return ordered.groupby([POOL_PROMPT_COLUMN, LABEL_COLUMN], sort=False).head(limit)
 
 
-def _drop_duplicates_and_ambiguity(
-    df: pd.DataFrame, steps: list[dict]
-) -> pd.DataFrame:
+def _drop_duplicates_and_ambiguity(df: pd.DataFrame, steps: list[dict]) -> pd.DataFrame:
     labels_per_text = df.groupby(TEXT_COLUMN)[LABEL_COLUMN].nunique()
     ambiguous = labels_per_text[labels_per_text > 1].index
     before = len(df)
@@ -130,9 +144,7 @@ def assign_pool_folds(
     """Assign prompt-grouped folds used only for pool-internal diagnostics."""
     counts = df[LABEL_COLUMN].value_counts()
     if len(counts) < 2 or int(counts.min()) < n_splits:
-        raise ValueError(
-            "every label needs at least n_splits rows to build pool folds"
-        )
+        raise ValueError("every label needs at least n_splits rows to build pool folds")
     splitter = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed)
     folds = np.full(len(df), -1, dtype=int)
     for fold, (_, val_idx) in enumerate(
@@ -190,6 +202,8 @@ def clean_open_pool(
 
     df = _drop_duplicates_and_ambiguity(df, steps)
 
+    # Coverage, pair caps and diagnostic folds must all share the same grouping.
+    df[POOL_PROMPT_COLUMN] = _canonical_prompt_groups(df)
     df["prompt_models"] = _prompt_model_counts(df)
     before = len(df)
     core = df[df["prompt_models"] >= config.min_prompt_models]
@@ -201,9 +215,7 @@ def clean_open_pool(
 
     cleaned = core.sort_values(ID_COLUMN).reset_index(drop=True)
 
-    cleaned[FOLD_COLUMN] = assign_pool_folds(
-        cleaned, n_splits=config.n_splits, seed=config.seed
-    )
+    cleaned[FOLD_COLUMN] = assign_pool_folds(cleaned, n_splits=config.n_splits, seed=config.seed)
 
     for column in CLEAN_COLUMNS:
         if column not in cleaned.columns:
